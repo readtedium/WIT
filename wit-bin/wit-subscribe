@@ -1,0 +1,177 @@
+#!/bin/sh
+#						Version 0.1 (Prototype)
+#	WIT - W3 Interactive Talk
+#
+#	Allocate a nickname for a user
+#
+# Author:
+#	Ari Luotonen <luotonen@www.cern.ch>
+#	June 1994
+#
+
+#
+#	MACHINE DEPENDENT -- SET THIS:
+#
+INIT=/CERN_WWW/wit-bin/wit-settings
+
+#
+#	NO NEED TO EDIT ANY FURTHER
+#
+
+#
+#	Get common settings
+#
+. $INIT
+
+cat<<_EOT_
+Content-Type: text/html
+
+<TITLE>Subscription to WIT</TITLE>
+<H1>Subscription</H1>
+
+_EOT_
+
+if [ -z "$ADMIN"  -o  ! -d "$ADMIN" ]; then
+	echo "<H2>Public ADMIN directory doesn't exist</H2>"
+	echo "Public access apparently not enabled."
+	exit
+elif [ -z "$PEOPLE"  -o  ! -d "$PEOPLE" ]; then
+	echo "<H2>People database directory doesn't exit: $PEOPLE</H2>"
+	echo "Public access apparently not enabled."
+	exit
+elif [ -z "$PASSWD"  -o  ! -f "$PASSWD" ]; then
+	echo "<H2>Public password file doesn't exist: $PASSWD</H2>"
+	echo "Public access apparently not enabled."
+	exit
+fi
+
+if [ "$HELP" ]; then cat <<_EOT_
+<BLOCKQUOTE><EM>
+	<B>Important:</B> This form updates the <B>public</B> WIT
+	password database on this host - not a private one.
+	If you are browsing a private WIT Discussion Web you need to
+	contact the webmaster if you don't have a nickname yet. <P>
+
+	If you already have a username for WIT at this host
+	(`hostname`) you shouldn't use this form anymore! <P>
+
+	Your "nickname" is your username, and you must type it and
+	your password into your browser's password dialog box when you
+	post articles. <P>
+
+	The password doesn't show on this form so you have to enter it
+	twice, to <B>Password</B> and <B>Verify</B> fields. <P>
+
+	Nickname, password and real name are obligatory; e-mail, home
+	URL and photo URL are optional, but recommended.
+</EM></BLOCKQUOTE>
+<HR>
+_EOT_
+fi
+
+if [ "$CONTENT_LENGTH" -gt 0 ]; then
+	#
+	#	Actual subscription
+	#
+	eval `$CGIPARSE -form`
+	if [	-z "$FORM_nickname"	-o -z "$FORM_password" -o \
+		-z "$FORM_verify"	-o -z "$FORM_name" ]
+	then cat<<_EOT_
+<H2>ERROR: Form is incomplete</H2>
+<BLOCKQUOTE><EM>
+	You must fill out at least the <B>nickname</B>, <B>password</B>,
+	<B>verify</B> and <B>real name</B> fields.
+</EM></BLOCKQUOTE>
+_EOT_
+	elif [ "$FORM_password" != "$FORM_verify" ]; then
+		cat<<_EOT_
+<H2>ERROR: Password mismatch</H2>
+<BLOCKQUOTE><EM>
+	Password doesn't match the one you wrote into the <B>Verify</B>
+	field - please, retype both of them.
+</EM></BLOCKQUOTE>
+_EOT_
+		FORM_password=""
+		FORM_verify=""
+	else
+		if [ "$FORM_home" -a -z "$FORM_nocheck" ]
+		then
+			$WWW -to www/present "$FORM_home" >/dev/null 2>&1
+			if [ $? -ne 0 ]; then
+				OK=NO
+				URL_PROBLEM=YES
+				cat<<_EOT_
+<H2>ERROR: Cannot retrieve your home URL</H2>
+<BLOCKQUOTE><EM>
+	If the URL is correct but the server is temporarily
+	unavailable, check the box in the bottom of the page
+	to inhibit the URL check.
+</EM></BLOCKQUOTE>
+_EOT_
+			fi
+		fi
+		if [ "$URL_PROBLEM" != YES ]
+		then 
+			PERSON=$PEOPLE/$FORM_nickname
+			if [ -f "$PERSON" ]; then
+				cat<<_EOT_
+<H2>ERROR: Nickname $FORM_nickname is already in use</H2>
+<BLOCKQUOTE><EM>
+	Please, pick another nickname for yourself, someone else has
+	already reserved "$FORM_nickname".
+</EM></BLOCKQUOTE>
+_EOT_
+			else
+				cat > $PERSON <<_EOT_
+Nickname: $FORM_nickname
+Name: $FORM_name
+Email: $FORM_email
+Home-URL: $FORM_home
+Photo-URL: $FORM_photo
+_EOT_
+				E=`$HTADM -adduser $PASSWD "$FORM_nickname" "$FORM_password" "$FORM_name <$FORM_email>" 2>&1`
+				if [ $? -ne 0 ]; then
+					echo "<H2>ERROR: Couldn't create passwd entry</H2><PRE>"
+					echo "$E"
+					echo "</PRE>"
+				else	cat<<_EOT_
+<H2>Welcome, $FORM_nickname!</H2>
+<BLOCKQUOTE><EM>
+	Don't forget your nickname "$FORM_nickname" or
+	your password! <P>
+
+	<B>Have fun!</B>
+</EM></BLOCKQUOTE>
+<A HREF="$TOPIC_LIST_URL"><IMG SRC="/wit-icons/Topics.gif" ALT="[TOPICS]"></A>
+_EOT_
+					exit 0
+				fi
+			fi
+		fi
+	fi
+fi
+
+#
+#	Output form
+#
+cat<<_EOT_
+<FORM METHOD="POST" ACTION="/wit-subscribe">
+<PRE>
+     Nickname:<INPUT TYPE="text"     NAME="nickname" VALUE="$FORM_nickname">
+     Password:<INPUT TYPE="password" NAME="password" VALUE="$FORM_password">
+       Verify:<INPUT TYPE="password" NAME="verify"   VALUE="$FORM_verify"> <I>Retype password here</I>
+    Real name:<INPUT TYPE="text"     NAME="name"     VALUE="$FORM_name"   SIZE="40">
+       E-mail:<INPUT TYPE="text"     NAME="email"    VALUE="$FORM_email"  SIZE="40">
+Home page URL:<INPUT TYPE="text"     NAME="home"     VALUE="$FORM_home"   SIZE="60">
+    Photo URL:<INPUT TYPE="text"     NAME="photo"    VALUE="$FORM_photo"  SIZE="60">
+_EOT_
+if [ "$URL_PROBLEM" = YES ]; then
+	echo "              <INPUT TYPE="checkbox" NAME="nocheck">Inhibit URL check"
+fi
+cat<<_EOT_
+
+<INPUT TYPE="submit" VALUE=" Subscribe ">
+</PRE>
+<HR>
+_EOT_
+
