@@ -1,0 +1,205 @@
+#!/bin/sh
+#						Version 0.2 (Modernized)
+#	WIT - W3 Interactive Talk
+#
+#	Post a WIT document; can be a new
+#	 - topic
+#	 - proposal
+#	 - argument
+#
+#	Originally by Ari Luotonen <luotonen@www.cern.ch>, June 1994
+#	Modernized for Docker deployment, 2026
+#
+
+WIT_ROOT=${WIT_ROOT:-/opt/wit}
+INIT=${WIT_ROOT}/bin/wit-settings
+
+. "$INIT"
+
+#
+#	Generate the doc
+#
+cat<<_EOT_
+Content-Type: text/html
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>$TITLE</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .nav { margin: 10px 0; }
+        .nav img { border: none; vertical-align: middle; }
+        address { font-style: italic; color: #666; }
+        hr { border: 1px solid #ccc; }
+        form { margin: 20px 0; }
+        textarea { width: 100%; }
+        pre { background: #f5f5f5; padding: 10px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+_EOT_
+
+#
+#	Check for validity
+#
+if [ ! -d "$DISCUSS" ]; then
+    echo "<h1>No such discussion directory: $DISCUSS</h1>"
+    echo "</body></html>"
+    exit
+fi
+
+#
+#	Make sure the directory is valid
+#
+if [ ! -d "$DIR" ]; then
+    E=$(mkdir -p "$DIR" 2>&1)
+    if [ $? -ne 0 ]; then
+        echo "<h2>ERROR</h2>"
+        echo "No directory <code>$DIR</code>"
+        echo "and <code>mkdir</code> failed: <pre>$E</pre>"
+        echo "</body></html>"
+        exit
+    fi
+fi
+
+#
+#	Form for entering a new document
+#
+if [ "$CONTENT_LENGTH" -eq 0 ] 2>/dev/null || [ -z "$CONTENT_LENGTH" ]; then
+    cat<<_EOT_
+<h1>$TITLE</h1>
+<hr>
+_EOT_
+    if [ "$TASK" != Topic ]; then
+        S=$(grep '^Subject:' "$PARENT.about" 2>/dev/null)
+        if [ $? -eq 0 ]; then
+            set $S; shift; S=$*
+            echo "<address>$PARENT_TYPE: $S</address><p>"
+        fi
+        cat "$PARENT.html" 2>/dev/null
+        echo "<p><hr>"
+    fi
+
+    if [ "$HELP" ]; then
+        cat <<_EOT_
+<blockquote><em>
+    Write a one-line <b>summary</b> of your article; this will
+    appear in article listings as the subject. <b>Don't</b> use
+    HTML markup inside summary - only plain text is allowed.
+</em></blockquote>
+_EOT_
+    fi
+
+    cat<<_EOT_
+<form method="POST" action="$POST_ACTION">
+<pre>
+${SUBJECT:=Summary:}<input type="text" name="subject" size="70">
+_EOT_
+    if [ "$HELP" ]; then
+        cat <<_EOT_
+</pre>
+<blockquote><em>
+    The more elaborate explanation can be either HTML or plain
+    text. Indicate this by checking the correct radio button.
+    When you have finished your article press the <b>Post</b>
+    button.
+</em></blockquote>
+<pre>
+_EOT_
+    fi
+    cat<<_EOT_
+        <b><input
+	type="radio" name="type" value="html">HTML <input
+	type="radio" name="type" value="plain" checked>Plain text</b>
+        <textarea name="content" rows="20" cols="70"></textarea>
+</pre>
+<input type="submit" value=" Post "> <em>This is like sending mail: no undo (yet)!</em>
+</form>
+_EOT_
+
+#
+#	Accept a new document
+#
+else
+    S=$(ls "$DIR"/*.about 2>/dev/null | tail -1)
+    N=$(expr "$S" : '.*[^0-9]\([0-9]*\).about' 2>&1)
+    if [ $? = 0 ] && [ -n "$N" ] && [ "$N" -gt 0 ] 2>/dev/null; then
+        N=$(expr $N + 1)
+    else
+        N=1001
+    fi
+    DOC="${DIR}/${PRE}${N}"
+    touch "$DOC.about"
+    if [ "$NEXT" ]; then
+        E=$(mkdir -p "$DOC.$NEXT" 2>&1)
+        if [ $? != 0 ]; then
+            echo "<h1>ERROR</h1>"
+            echo "<b>$E ($DOC.$NEXT already exists - synchronization problem?)"
+            echo "Please retry!</b>"
+            echo "</body></html>"
+            exit
+        fi
+    fi
+    echo "Subject: $FORM_subject" > "$DOC.about"
+    echo "From: ${REMOTE_USER:-Anonymous}" >> "$DOC.about"
+    echo "Date: $(date)" >> "$DOC.about"
+    if [ "$FORM_type" = "html" ]; then
+        echo "$FORM_content" > "$DOC.html"
+    else
+        echo "<PRE>" > "$DOC.html"
+        echo "$FORM_content" >> "$DOC.html"
+        echo "</PRE>" >> "$DOC.html"
+    fi
+    touch "$DOC.arguments.html"
+
+    #
+    #	Update links
+    #
+    if [ "$PRE" = Argument ]; then
+        echo "Argues: $ACTION_PATH" >> "$DOC.about"
+        echo "Argued-by: /Topic${TOPIC_NO}/Proposal${PROPOSAL_NO}/$PRE$N" >> "$PARENT.about"
+        echo "Opinion: $OPINION" >> "$DOC.about"
+        "$WIT_BIN/wit-update-arg-list"
+    fi
+
+    if [ "$TASK" != Topic ]; then
+        S=$(grep '^Subject:' "$TOPIC.about" 2>/dev/null)
+        if [ $? = 0 ]; then
+            set $S; shift
+            echo "Topic: $*" >> "$DOC.about"
+        fi
+        if [ "$TASK" != Proposal ]; then
+            S=$(grep '^Subject:' "$PROPOSAL.about" 2>/dev/null)
+            if [ $? = 0 ]; then
+                set $S; shift
+                echo "Proposal: $*" >> "$DOC.about"
+            fi
+            if [ "$TASK" = SecondArgument ]; then
+                grep '^Argument:' "$ARGUMENT.about" >> "$DOC.about" 2>/dev/null
+                S=$(grep '^Subject:' "$ARGUMENT.about" 2>/dev/null)
+                if [ $? = 0 ]; then
+                    set $S; shift
+                    echo "Argument: $*" >> "$DOC.about"
+                fi
+            fi
+        fi
+    fi
+
+    #
+    #	Output document
+    #
+    echo "<h2>$FORM_subject</h2>"
+    cat "$DOC.html"
+
+    #
+    #	The back button
+    #
+    echo "<hr><div class=\"nav\"><a href=\"$LIST_ACTION\"><img src=\"/wit-icons/Back.gif\" alt=\"[BACK]\"></a></div>"
+fi
+
+#
+#	Sign
+#
+echo "<hr><address>WIT - W3 Interactive Talk</address>"
+echo "</body></html>"

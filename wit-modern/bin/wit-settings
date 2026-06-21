@@ -1,0 +1,199 @@
+#!/bin/sh
+#						Version 0.2 (Modernized)
+#	WIT - W3 Interactive Talk
+#
+#	This file is read in by all the other WIT scripts;
+#	it contains common settings and CGI parsing code.
+#
+#	Originally by Ari Luotonen <luotonen@www.cern.ch>, June 1994
+#	Modernized for Docker deployment, 2026
+#
+
+#
+# # # #	CONFIGURATION -- SET THESE IF NEEDED # # # #
+#
+WIT_ROOT=${WIT_ROOT:-/opt/wit}
+WIT_BIN=${WIT_ROOT}/bin
+WIT_DATA=${WIT_ROOT}/data
+WIT_ICONS=${WIT_ROOT}/icons
+
+ADMIN=${WIT_DATA}/Discussion/Admin
+PEOPLE=${ADMIN}/People
+PASSWD=${ADMIN}/passwd
+
+#
+# # # #	NO NEED TO EDIT ANY FURTHER # # # #
+#
+
+# URL decode function
+urldecode() {
+    echo "$1" | sed 's/+/ /g' | awk '{
+        gsub(/%0A/, "\n")
+        gsub(/%0D/, "\r")
+        gsub(/%09/, "\t")
+        gsub(/%20/, " ")
+        gsub(/%21/, "!")
+        gsub(/%22/, "\"")
+        gsub(/%23/, "#")
+        gsub(/%24/, "$")
+        gsub(/%25/, "%")
+        gsub(/%26/, "\\&")
+        gsub(/%27/, "'\''")
+        gsub(/%28/, "(")
+        gsub(/%29/, ")")
+        gsub(/%2A/, "*")
+        gsub(/%2B/, "+")
+        gsub(/%2C/, ",")
+        gsub(/%2F/, "/")
+        gsub(/%3A/, ":")
+        gsub(/%3B/, ";")
+        gsub(/%3C/, "<")
+        gsub(/%3D/, "=")
+        gsub(/%3E/, ">")
+        gsub(/%3F/, "?")
+        gsub(/%40/, "@")
+        gsub(/%5B/, "[")
+        gsub(/%5D/, "]")
+        gsub(/%5E/, "^")
+        gsub(/%60/, "`")
+        gsub(/%7B/, "{")
+        gsub(/%7C/, "|")
+        gsub(/%7D/, "}")
+        gsub(/%7E/, "~")
+        print
+    }'
+}
+
+# Simple CGI parameter parser (replaces cgiparse)
+# POSIX sh compatible version
+parse_cgi() {
+    if [ "$REQUEST_METHOD" = "POST" ]; then
+        read -r QUERY_STRING_POST
+    fi
+
+    # Combine GET and POST parameters
+    _QS="${QUERY_STRING:-}"
+    if [ -n "$QUERY_STRING_POST" ]; then
+        if [ -n "$_QS" ]; then
+            _QS="${_QS}&${QUERY_STRING_POST}"
+        else
+            _QS="$QUERY_STRING_POST"
+        fi
+    fi
+
+    # Parse parameters using IFS and set
+    OLD_IFS="$IFS"
+    IFS='&'
+    set -- $_QS
+    IFS="$OLD_IFS"
+
+    for param in "$@"; do
+        key="${param%%=*}"
+        value="${param#*=}"
+        value=$(urldecode "$value")
+        # Export as FORM_key
+        export "FORM_${key}=${value}"
+    done
+}
+
+# Call parser if we have input
+if [ "$REQUEST_METHOD" = "POST" ] || [ -n "$QUERY_STRING" ]; then
+    parse_cgi
+fi
+
+#
+#	Parse PATH_INFO
+#
+TOPIC_NO=$(expr "$PATH_INFO" : '.*\/Topic\([0-9]*\).*' 2>/dev/null || echo "")
+PROPOSAL_NO=$(expr "$PATH_INFO" : '.*\/Proposal\([0-9]*\).*' 2>/dev/null || echo "")
+ARGUMENT_NO=$(expr "$PATH_INFO" : '.*\/Argument\([0-9]*\).*' 2>/dev/null || echo "")
+OPINION=$(expr "$PATH_INFO" : '.*\/Opinion=\([a-z]*\).*' 2>/dev/null || echo "")
+
+if [ "$TOPIC_NO" ]; then
+    CUSTOM_VIRTUAL=$(expr "$PATH_INFO" : '\(.*\)\/Topic[0-9].*' 2>/dev/null || echo "")
+    CUSTOM_PHYSICAL="${WIT_DATA}${CUSTOM_VIRTUAL}"
+else
+    CUSTOM_VIRTUAL="$PATH_INFO"
+    CUSTOM_PHYSICAL="${WIT_DATA}${PATH_INFO}"
+fi
+
+DISCUSS=${CUSTOM_PHYSICAL}/Discussion
+if [ ! -d "$DISCUSS" ]; then
+    DISCUSS=${WIT_DATA}/Discussion
+fi
+
+TOPICS=${DISCUSS}/Topics
+TOPIC=${TOPICS}/Topic${TOPIC_NO}
+
+PROPOSALS=${TOPIC}.Proposals
+PROPOSAL=${PROPOSALS}/Proposal${PROPOSAL_NO}
+
+ARGUMENTS=${PROPOSAL}.Arguments
+ARGUMENT=${ARGUMENTS}/Argument${ARGUMENT_NO}
+
+if [ "$OPINION" = agree ]; then
+    DO_WHAT="Agree with"
+elif [ "$OPINION" = disagree ]; then
+    DO_WHAT="Disagree with"
+elif [ "$OPINION" = flame ]; then
+    DO_WHAT="Flame the"
+else
+    DO_WHAT="WHAT?"
+fi
+
+#
+#	Figure out what to do
+#
+if [ "$ARGUMENT_NO" -gt 0 ] 2>/dev/null; then
+    TASK=SecondArgument
+    PRE=Argument
+    NEXT=""
+    TITLE="$DO_WHAT argument"
+    DIR=$ARGUMENTS
+    PARENT_TYPE=Argument
+    PARENT="${DISCUSS}/Topics/Topic${TOPIC_NO}.Proposals/Proposal${PROPOSAL_NO}.Arguments/Argument${ARGUMENT_NO}"
+    ACTION_PATH="/Topic${TOPIC_NO}/Proposal${PROPOSAL_NO}/Argument${ARGUMENT_NO}"
+
+elif [ "$PROPOSAL_NO" -gt 0 ] 2>/dev/null; then
+    TASK=Argument
+    PRE=Argument
+    NEXT=""
+    TITLE="$DO_WHAT proposal"
+    DIR=$ARGUMENTS
+    PARENT_TYPE=Proposal
+    PARENT="${DISCUSS}/Topics/Topic${TOPIC_NO}.Proposals/Proposal${PROPOSAL_NO}"
+    ACTION_PATH="/Topic${TOPIC_NO}/Proposal${PROPOSAL_NO}"
+
+elif [ "$TOPIC_NO" -gt 0 ] 2>/dev/null; then
+    TASK=Proposal
+    PRE=Proposal
+    NEXT=Arguments
+    TITLE="New Proposal"
+    DIR=$PROPOSALS
+    PARENT_TYPE=Topic
+    PARENT="${DISCUSS}/Topics/Topic${TOPIC_NO}"
+    ACTION_PATH="/Topic${TOPIC_NO}"
+
+else
+    TASK=Topic
+    PRE=Topic
+    NEXT=Proposals
+    TITLE="New Topic"
+    DIR=$TOPICS
+    PARENT_TYPE=""
+    PARENT=none
+    ACTION_PATH=""
+    SUBJECT="  Topic:"
+fi
+
+SUBSCRIBE_ACTION=/cgi-bin/wit-subscribe
+POST_ACTION=/cgi-bin/wit-post${CUSTOM_VIRTUAL}${ACTION_PATH}
+if [ "$OPINION" ]; then
+    POST_ACTION=${POST_ACTION}/Opinion=${OPINION}
+fi
+LIST_ACTION=/cgi-bin/wit${CUSTOM_VIRTUAL}${ACTION_PATH}
+TOPIC_LIST_URL=/cgi-bin/wit${CUSTOM_VIRTUAL}
+PROPOSAL_LIST_URL=${TOPIC_LIST_URL}/Topic${TOPIC_NO}
+ARGUMENT_LIST_URL=${PROPOSAL_LIST_URL}/Proposal${PROPOSAL_NO}
+
+HELP=yes

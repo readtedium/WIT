@@ -1,0 +1,211 @@
+#!/bin/sh
+#						Version 0.1 (Prototype)
+#	WIT - W3 Interactive Talk
+#
+#	This file is read in by all the other WIT scripts;
+#	it contains common settings that are machine specific.
+#
+#	Contains also the code for parsing PATH_INFO.
+#
+# Author:
+#	Ari Luotonen <luotonen@www.cern.ch>
+#	June 1994
+#
+
+#
+# # # #	MACHINE DEPENDENT -- SET THESE: # # # #
+#
+
+#
+#	Programs
+#
+CGIPARSE="/apps/WWW/bin/cgiparse -quiet"
+WWW=/usr/local/bin/www			# LineMode Browser
+HTADM=/apps/WWW/bin/htadm		# htadm program
+WIT_BIN=/CERN_WWW/wit-bin		# these scripts
+
+#
+#	Add necessary components
+#
+PATH=${PATH}:/usr/ucb
+
+#
+#	Variables
+#
+# DEFAULT_DISCUSS is the default directory to look for "Discussion"
+# directory if it wasn't given as part of the URL.
+#
+# NOTE that the "Discussion" subdirectory must exist, but it must
+# NOT be a part of DEFAULT_DISCUSS; the actual discussion directory
+# is therefore $DEFAULT_DISCUSS/Discussion.
+#
+DEFAULT_DISCUSS=/CERN_WWW
+
+#
+#	Every machine can have *one* public database of usernames,
+#	regardless of how many discussion trees that host has.
+#
+#	If both of the directories $ADMIN and $PEOPLE exist, and
+#	at least the file $PASSWD exists, wit-subscribe script will
+#	be enabled to allocate new users without limitations.
+#
+#	The password file $PASSWD should be used to protect calls
+#	to the script /wit-subscribe.
+#
+ADMIN=$DEFAULT_DISCUSS/Discussion/Admin
+PEOPLE=$ADMIN/People
+PASSWD=$ADMIN/passwd
+
+#
+# CERN HTTPD 3.0pre6 OR NEWER IS REQUIRED.
+#
+# For public WIT HTTPD should be configured as follows:
+#
+# Pass	/wit-icons/*	/where/ever/wit-icons/*
+# Protect /wit* {
+#	UserId		wit
+#	GroupId		nobody
+#	Mask		Anybody
+# }
+# Protect /wit-post* {
+#	UserId		wit
+#	GroupId		nobody
+#	ServerId	W3-Interactive-Talk
+#	PasswdFile	/where/ever/Discussion/Admin/passwd
+#	Mask		All
+# }
+# Map	/wit*		/some/path/wit-bin/wit*
+# Exec	/some/path/wit-bin/*
+#
+# UserId and GroupId must be set such that the wit-post and
+# wit-subscribe scripts have write access to necessary files.
+#
+# For private WIT webs, say the discussion in /foo/bar/Discussion,
+# add the following *just* *before* the "Map" rule in previous
+# example:
+#
+# Protect /wit*/foo/bar* {
+#	UserId		wit
+#	GroupId		nobody
+#	ServerId	Private-WIT
+#	PasswdFile	/foo/bar/passwd
+#	GroupFile	/foo/bar/group
+#	Mask		All
+# }
+#
+# So the difference is that *all* WIT scripts get protected with the
+# same setup, and that a different (private) password file is
+# specified.  Users cannot be added to this password file with the
+# normal wit-subscribe script -- it is up to the webmaster of the
+# host.
+#
+# # # #	NO NEED TO EDIT ANY FURTHER # # # #
+#
+
+#
+#
+#
+UPDATE_ARG_LIST=$WIT_BIN/wit-update-arg-list
+
+#
+#	Parse PATH_INFO
+#
+TOPIC_NO=`expr "$PATH_INFO" : '.*\/Topic\([0-9]*\).*'`
+PROPOSAL_NO=`expr "$PATH_INFO" : '.*\/Proposal\([0-9]*\).*'`
+ARGUMENT_NO=`expr "$PATH_INFO" : '.*\/Argument\([0-9]*\).*'`
+OPINION=`expr "$PATH_INFO" : '.*\/Opinion=\([a-z]*\).*'`
+
+if [ "$TOPIC_NO" ]; then
+	CUSTOM_VIRTUAL=`expr "$PATH_INFO" : '\(.*\)\/Topic[0-9].*'`
+	CUSTOM_PHYSICAL=`expr "$PATH_TRANSLATED" : '\(.*\)\/Topic[0-9].*'`
+else
+	CUSTOM_VIRTUAL=$PATH_INFO
+	CUSTOM_PHYSICAL=$PATH_TRANSLATED
+fi
+if [ "$CUSTOM_VIRTUAL" ]; then
+	DISCUSS=$CUSTOM_PHYSICAL
+else
+	DISCUSS=$DEFAULT_DISCUSS
+fi
+DISCUSS=$DISCUSS/Discussion
+
+TOPICS=$DISCUSS/Topics
+TOPIC=$TOPICS/Topic$TOPIC_NO
+
+PROPOSALS=$TOPIC.Proposals
+PROPOSAL=$PROPOSALS/Proposal$PROPOSAL_NO
+
+ARGUMENTS=$PROPOSAL.Arguments
+ARGUMENT=$ARGUMENTS/Argument$ARGUMENT_NO
+
+if [ "$OPINION" = agree ]; then
+	DO_WHAT="Agree with"
+elif [ "$OPINION" = disagree ]; then
+	DO_WHAT="Disagree with"
+elif [ "$OPINION" = flame ]; then
+	DO_WHAT="Flame the"
+else
+	DO_WHAT="WHAT?"
+fi
+
+
+#
+#	Figure out what to do
+#
+if [ "$ARGUMENT_NO" -gt 0 ]	# Argument to another argument
+then
+	TASK=SecondArgument
+	PRE=Argument
+	NEXT=""
+	TITLE="$DO_WHAT argument"
+	DIR=$ARGUMENTS
+	PARENT_TYPE=Argument
+	PARENT="$DISCUSS/Topics/Topic$TOPIC_NO.Proposals/Proposal$PROPOSAL_NO.Arguments/Argument$ARGUMENT_NO"
+	ACTION_PATH="/Topic$TOPIC_NO/Proposal$PROPOSAL_NO/Argument$ARGUMENT_NO"
+
+elif [ "$PROPOSAL_NO" -gt 0 ]	# Argument to a proposal
+then
+	TASK=Argument
+	PRE=Argument
+	NEXT=""
+	TITLE="$DO_WHAT proposal"
+	DIR=$ARGUMENTS
+	PARENT_TYPE=Proposal
+	PARENT="$DISCUSS/Topics/Topic$TOPIC_NO.Proposals/Proposal$PROPOSAL_NO"
+	ACTION_PATH="/Topic$TOPIC_NO/Proposal$PROPOSAL_NO"
+
+elif [ "$TOPIC_NO" -gt 0 ]	# Proposal to a topic
+then
+	TASK=Proposal
+	PRE=Proposal
+	NEXT=Arguments
+	TITLE="New Proposal"
+	DIR=$PROPOSALS
+	PARENT_TYPE=Topic
+	PARENT="$DISCUSS/Topics/Topic$TOPIC_NO"
+	ACTION_PATH="/Topic$TOPIC_NO"
+
+else				# Add a new topic
+	TASK=Topic
+	PRE=Topic
+	NEXT=Proposals
+	TITLE="New Topic"
+	DIR=$TOPICS
+	PARENT_TYPE=
+	PARENT=none
+	ACTION_PATH=""
+	SUBJECT="  Topic:"
+fi
+
+SUBSCRIBE_ACTION=/wit-subscribe
+POST_ACTION=/wit-post$CUSTOM_VIRTUAL$ACTION_PATH
+if [ "$OPINION" ]; then
+	POST_ACTION=$POST_ACTION/Opinion=$OPINION
+fi
+LIST_ACTION=/wit$CUSTOM_VIRTUAL$ACTION_PATH
+TOPIC_LIST_URL=/wit$CUSTOM_VIRTUAL
+PROPOSAL_LIST_URL=$TOPIC_LIST_URL/Topic$TOPIC_NO
+ARGUMENT_LIST_URL=$PROPOSAL_LIST_URL/Proposal$PROPOSAL_NO
+
+HELP=yes
+

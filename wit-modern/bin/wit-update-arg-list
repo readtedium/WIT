@@ -1,0 +1,70 @@
+#!/bin/sh
+#						Version 0.2 (Modernized)
+#	WIT - W3 Interactive Talk
+#
+#	Updates the discussion thread all the way up from the current
+#	document (the one referred to by PATH_INFO).
+#
+#	Originally by Ari Luotonen <luotonen@www.cern.ch>, June 1994
+#	Modernized for Docker deployment, 2026
+#
+
+WIT_ROOT=${WIT_ROOT:-/opt/wit}
+INIT=${WIT_ROOT}/bin/wit-settings
+
+. "$INIT"
+
+TMPFILE=/tmp/tmp-wit-update.$$
+
+#
+#	Update argument listing
+#
+if [ "$PRE" = Argument ]; then
+    #
+    #	Immediate arguments
+    #
+    grep "Argued-by:" "$PARENT.about" 2>/dev/null | while read line; do
+        if [ "$line" ]; then
+            set $line
+            arg_no=$(expr "$2" : '.*\/Argument\([0-9]*\).*')
+            subject=$(grep '^Subject:' "$ARGUMENTS/Argument${arg_no}.about" 2>&1 |
+                     sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')
+            if [ $? -eq 0 ]; then
+                set $subject; shift; subject=$*
+            fi
+            TICK_NAME=Tick
+            ALT_STR=""
+            opinion=$(grep '^Opinion:' "$ARGUMENTS/Argument${arg_no}.about" 2>/dev/null)
+            if [ $? -eq 0 ]; then
+                set $opinion
+                if [ "$2" = disagree ] || [ "$2" = flame ]; then
+                    TICK_NAME=Cross
+                fi
+            fi
+            ICON_URL="/wit-icons/${TICK_NAME}.gif"
+
+            #
+            #	Argument
+            #
+            echo "<li> <img src=\"$ICON_URL\" alt=\"$ALT_STR\"><a href=\"/cgi-bin/wit${CUSTOM_VIRTUAL}/Topic${TOPIC_NO}/Proposal${PROPOSAL_NO}/Argument${arg_no}\">"
+            echo "     ${subject:-[no subject]}</a>"
+
+            #
+            #	Arguments to argument
+            #
+            if [ -s "$ARGUMENTS/Argument${arg_no}.arguments.html" ]; then
+                echo "<ul>"
+                cat "$ARGUMENTS/Argument${arg_no}.arguments.html"
+                echo "</ul>"
+            fi
+        fi
+    done > "$PARENT.arguments.html"
+    argues=$(grep "Argues:" "$PARENT.about" 2>/dev/null)
+    if [ $? -eq 0 ]; then
+        set $argues
+        PATH_INFO="${CUSTOM_VIRTUAL}${2}"
+        export PATH_INFO
+        PATH_TRANSLATED="${CUSTOM_PHYSICAL}${2}"
+        "$WIT_BIN/wit-update-arg-list"
+    fi
+fi

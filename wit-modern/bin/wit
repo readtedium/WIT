@@ -1,0 +1,282 @@
+#!/bin/sh
+#						Version 0.2 (Modernized)
+#	WIT - W3 Interactive Talk
+#
+#	Viewer script:
+#	 - list topics
+#	 - view topic + list proposals
+#	 - view proposal + list arguments
+#	 - view arguments
+#
+#	Originally by Ari Luotonen <luotonen@www.cern.ch>, June 1994
+#	Modernized for Docker deployment, 2026
+#
+
+WIT_ROOT=${WIT_ROOT:-/opt/wit}
+INIT=${WIT_ROOT}/bin/wit-settings
+
+. "$INIT"
+
+TMPFILE=/tmp/tmp-wit-list.$$
+
+#
+#	Header
+#
+cat<<_EOT_
+Content-Type: text/html
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WIT - W3 Interactive Talk</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .nav { margin: 10px 0; }
+        .nav img { border: none; vertical-align: middle; }
+        .topic-list { list-style-type: none; padding: 0; }
+        .topic-list li { margin: 5px 0; }
+        .argument { margin: 10px 0; padding: 10px; background: #f5f5f5; border-radius: 5px; }
+        .agree { color: green; }
+        .disagree { color: red; }
+        address { font-style: italic; color: #666; }
+        hr { border: 1px solid #ccc; }
+        form { margin: 20px 0; }
+        textarea { width: 100%; }
+    </style>
+</head>
+<body>
+_EOT_
+
+#
+#	Check for validity
+#
+if [ ! -d "$DISCUSS" ]; then
+    echo "<h1>No such discussion directory: $DISCUSS</h1>"
+    echo "</body></html>"
+    exit
+fi
+
+#
+#	Navigation panel
+#
+echo '<div class="nav">'
+if [ -z "$REMOTE_USER" ]; then
+    echo "<a href=\"$SUBSCRIBE_ACTION\"><img src=\"/wit-icons/Subscribe.gif\" alt=\"[SUBSCRIBE]\"></a>"
+fi
+if [ "$TASK" != Topic ]; then
+    echo "<a href=\"$TOPIC_LIST_URL\"><img src=\"/wit-icons/Topics.gif\" alt=\"[TOPICS]\"></a>"
+    if [ "$TASK" != Proposal ]; then
+        echo "<a href=\"$PROPOSAL_LIST_URL\"><img src=\"/wit-icons/Proposals.gif\" alt=\"[PROPOSALS]\"></a>"
+        if [ "$TASK" != Argument ]; then
+            echo "<a href=\"$ARGUMENT_LIST_URL\"><img src=\"/wit-icons/Arguments.gif\" alt=\"[ARGUMENTS]\"></a>"
+        fi
+    fi
+fi
+echo '</div>'
+
+#
+#	Help text
+#
+if [ "$HELP" ]; then
+    if [ "$TASK" = Topic ]; then
+        cat <<_EOT_
+<h1>Welcome to WIT - W3 Interactive Talk</h1>
+<blockquote><em>
+    Here you see a list of topics available on this W3 Interactive
+    Talk area -- you can select one by clicking on it, or you can
+    start a discussion on a new topic by pressing the <b>New
+    topic</b> button. <p>
+
+    If this is the first time you use this service, and you want
+    to take part in the discussion, get yourself a nickname
+    (username) and password by clicking on the <b>Subscribe</b>
+    button.
+</em></blockquote>
+_EOT_
+    elif [ "$TASK" = Proposal ]; then
+        cat <<_EOT_
+<blockquote><em>
+    This is one topic with a list of proposals to it - you can
+    take part in the discussion by selecting one proposal and
+    replying to it or to other replies.  You can also make a new
+    proposal by pressing the button in the bottom of the page.
+</em></blockquote>
+_EOT_
+    elif [ "$TASK" = Argument ]; then
+        cat <<_EOT_
+<blockquote><em>
+    This is a proposal with the discussion of it.  You can write
+    your own reply by pressing the <b>Agree</b> or <b>Disagree</b>
+    button.
+    In GUI browsers,
+    <img src="/wit-icons/Tick.gif" alt="tick"> means agree,
+    <img src="/wit-icons/Cross.gif" alt="cross"> means disagree.
+</em></blockquote>
+_EOT_
+    elif [ "$TASK" = SecondArgument ]; then
+        cat <<_EOT_
+<blockquote><em>
+    This is an article in the discussion about the proposal.
+    Again, you can express your own opinions by pressing the
+    <b>Agree</b> or <b>Disagree</b> button.
+</em></blockquote>
+_EOT_
+    fi
+fi
+
+#
+#	View document/README
+#
+if [ "$TASK" = Topic ] && [ -f "$DISCUSS/README" ]; then
+    echo "<hr>"
+    cat "$DISCUSS/README"
+fi
+
+if [ "$TASK" != Topic ]; then
+    #
+    #	Find out the author
+    #
+    echo "<hr>"
+    FROM=$(grep "From:" "$PARENT.about" 2>/dev/null)
+    if [ $? -eq 0 ]; then
+        set $FROM
+        NICKNAME=$2
+        if [ "$NICKNAME" ]; then
+            LINK=$(grep "Home-URL:" "$PEOPLE/$NICKNAME" 2>/dev/null)
+            if [ $? -eq 0 ]; then
+                set $LINK
+                LINK=$2
+            fi
+            REALNAME=$(grep "Name:" "$PEOPLE/$NICKNAME" 2>/dev/null)
+            if [ "$REALNAME" ]; then
+                set $REALNAME; shift
+                REALNAME=$*
+            else
+                REALNAME=$NICKNAME
+            fi
+            EMAIL=$(grep "Email:" "$PEOPLE/$NICKNAME" 2>/dev/null)
+            if [ "$EMAIL" ]; then
+                set $EMAIL
+                EMAIL=$2
+            fi
+        fi
+    fi
+    if [ -z "$NICKNAME" ]; then
+        NICKNAME=Anonymous
+    fi
+    if [ -z "$REALNAME" ]; then
+        REALNAME=Anonymous
+    fi
+    if [ "$EMAIL" ]; then
+        EMAIL_STR=", <a href=\"mailto:$EMAIL\">&lt;$EMAIL&gt;</a>"
+    fi
+    if [ "$LINK" ]; then
+        LINK_STR1="<a href=\"$LINK\">"
+        LINK_STR2="</a>"
+    fi
+    #
+    #	Output headers
+    #
+    echo "<address>From: ${LINK_STR1}${REALNAME}${LINK_STR2}${EMAIL_STR}</address>"
+    (   grep '^Date:' "$PARENT.about"
+        grep '^Topic:' "$PARENT.about"
+        grep '^Proposal:' "$PARENT.about"
+        grep '^Argument:' "$PARENT.about"
+    ) | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' |
+        while read line; do
+            set $line
+            if [ "$1" = "Argument:" ]; then
+                shift
+                if [ "$argnum" ]; then
+                    argnum=$(expr $argnum + 1)
+                else
+                    argnum=1
+                fi
+                line="Argument #$argnum: $*"
+            fi
+            echo "<address>$line</address>"
+        done
+
+    S=$(grep 'Subject:' "$PARENT.about" 2>/dev/null)
+    if [ $? = 0 ]; then
+        set $S; shift
+        echo "<h1>$*</h1>"
+    fi
+
+    #
+    #	Output the actual document
+    #
+    echo "<p>"
+    cat "$PARENT.html"
+fi
+
+#
+#	Reply buttons
+#
+if [ "$PRE" = Argument ]; then
+    cat<<_EOT_
+<hr>
+<div class="nav">
+<a href="$POST_ACTION/Opinion=agree"><img src="/wit-icons/Agree.gif" alt="[AGREE]"></a>
+<a href="$POST_ACTION/Opinion=disagree"><img src="/wit-icons/Disagree.gif" alt="[DISAGREE]"></a>
+</div>
+_EOT_
+fi
+echo "<hr>"
+
+#
+#	Produce listing
+#
+if [ "$PRE" = Argument ]; then
+    if [ -s "$PARENT.arguments.html" ]; then
+        echo "<ul>"
+        cat "$PARENT.arguments.html"
+        echo "</ul>"
+    else
+        echo "<em>No arguments yet.</em> <p>"
+    fi
+fi
+
+if [ "$PRE" != Argument ]; then
+    #
+    #	Listing heading
+    #
+    (
+        for i in "$DIR"/*.about
+        do
+            if [ -f "$i" ]; then
+                N=$(expr "$i" : '.*[^0-9]\([0-9]*\)\.about')
+                line=$(grep "Subject:" "$i" 2>/dev/null)
+                if [ $? -eq 0 ]; then
+                    set $line
+                    shift
+                    echo "<li> <a href=\"$LIST_ACTION/$PRE${N}\">${*:-[no subject]}</a>"
+                fi
+            fi
+        done
+    ) > "$TMPFILE"
+
+    if [ -s "$TMPFILE" ]; then
+        echo "<h1>${TASK}s</h1>"
+        echo "<ul class=\"topic-list\">"
+        cat "$TMPFILE"
+        echo "</ul><hr>"
+    elif [ "$TASK" = Topic ]; then
+        echo "<em>No topics yet.</em> <p>"
+    else
+        echo "<em>No proposals yet.</em> <p>"
+    fi
+    rm -f "$TMPFILE"
+
+    if [ "$TASK" = Topic ]; then
+        echo "<a href=\"$POST_ACTION\"><img src=\"/wit-icons/NewTopic.gif\" alt=\"[NEW TOPIC]\"></a>"
+    elif [ "$TASK" = Proposal ]; then
+        echo "<a href=\"$POST_ACTION\"><img src=\"/wit-icons/NewProposal.gif\" alt=\"[NEW PROPOSAL]\"></a>"
+    fi
+fi
+
+#
+#	Sign
+#
+echo "<hr><address>WIT - W3 Interactive Talk</address>"
+echo "</body></html>"

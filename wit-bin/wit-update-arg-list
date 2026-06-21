@@ -1,0 +1,79 @@
+#!/bin/sh
+#						Version 0.1 (Prototype)
+#	WIT - W3 Interactive Talk
+#
+#	Updates the discussion thread all the way up from the current
+#	document (the one referred to by PATH_INFO).
+#
+# Author:
+#	Ari Luotonen <luotonen@www.cern.ch>
+#	June 1994
+#
+
+#
+#	MACHINE DEPENDENT -- SET THIS:
+#
+INIT=/CERN_WWW/wit-bin/wit-settings
+
+#
+#	NO NEED TO EDIT ANY FURTHER
+#
+
+#
+#	Get common settings
+#
+. $INIT
+
+TMPFILE=/tmp/tmp-wit-update.$$
+
+#
+#	Update argument listing
+#
+if [ "$PRE" = Argument ]; then
+	#
+	#	Immediate arguments
+	#
+	grep Argued-by: $PARENT.about | while read line
+	do
+		if [ "$line" ]; then
+			set $line
+			arg_no=`expr "$2" : '.*\/Argument\([0-9]*\).*'`
+			subject=`grep '^Subject:' $ARGUMENTS/Argument$arg_no.about 2>&1 |
+				 sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'`
+			if [ $? -eq 0 ]; then
+				set $subject; shift; subject=$*
+			fi
+			TICK_NAME=Tick
+			ALT_STR=""	# No ALT text for now
+			opinion=`grep '^Opinion:' $ARGUMENTS/Argument$arg_no.about 2>/dev/null`
+			if [ $? -eq 0 ]; then
+				set $opinion
+				if [ "$2" = disagree -o "$2" = flame ]; then
+					TICK_NAME=Cross
+			fi;	fi
+			ICON_URL=/wit-icons/$TICK_NAME.gif
+
+			#
+			#	Argument
+			#
+			echo "<LI> <IMG SRC=\"$ICON_URL\" ALT=\"$ALT_STR\"><A HREF=\"/wit$CUSTOM_VIRTUAL/Topic$TOPIC_NO/Proposal$PROPOSAL_NO/Argument$arg_no\">"
+			echo "     ${subject:-[no subject]}</A>"
+
+			#
+			#	Arguments to argument
+			#
+			if [ -s "$ARGUMENTS/Argument$arg_no.arguments.html" ]; then
+				echo "<UL>"
+				cat $ARGUMENTS/Argument$arg_no.arguments.html
+				echo "</UL>"
+			fi
+		fi
+	done > $PARENT.arguments.html
+	argues=`grep Argues: $PARENT.about 2>/dev/null`
+	if [ $? -eq 0 ]; then
+		set $argues
+		PATH_INFO=$CUSTOM_VIRTUAL$2; export PATH_INFO
+		PATH_TRANSLATED=$CUSTOM_PHYSICAL$2
+		$UPDATE_ARG_LIST
+	fi
+fi

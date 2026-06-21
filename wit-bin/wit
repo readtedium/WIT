@@ -1,0 +1,265 @@
+#!/bin/sh
+#						Version 0.1 (Prototype)
+#	WIT - W3 Interactive Talk
+#
+#	Viewer script:
+#	 - list topics
+#	 - view topic + list proposals
+#	 - view proposal + list arguments
+#	 - view arguments
+#
+# Author:
+#	Ari Luotonen <luotonen@www.cern.ch>
+#	June 1994
+#
+
+#
+#	MACHINE DEPENDENT -- SET THIS:
+#
+INIT=/CERN_WWW/wit-bin/wit-settings
+
+#
+#	NO NEED TO EDIT ANY FURTHER
+#
+
+#
+#	Get common settings
+#
+. $INIT
+
+#
+#	Temporary file
+#
+TMPFILE=/tmp/tmp-wit-list.$$
+
+#
+#	Header
+#
+cat<<_EOT_
+Content-Type: text/html
+
+_EOT_
+
+#
+#	Check for validity
+#
+if [ ! -d "$DISCUSS" ]; then
+	echo "<H1>No such discussion directory: $DISCUSS</H1>"
+	exit
+fi
+
+#
+#	Navigation panel
+#
+if [ -z "$REMOTE_USER" ]; then
+	echo "<A HREF=\"$SUBSCRIBE_ACTION\"><IMG SRC="/wit-icons/Subscribe.gif" ALT="[SUBSCRIBE]"></A>"
+fi
+if [ "$TASK" != Topic ]; then
+	echo "<A HREF=\"$TOPIC_LIST_URL\"><IMG SRC=\"/wit-icons/Topics.gif\" ALT=\"[TOPICS]\"></A>"
+	if [ "$TASK" != Proposal ]; then
+		echo "<A HREF=\"$PROPOSAL_LIST_URL\"><IMG SRC=\"/wit-icons/Proposals.gif\" ALT=\"[PROPOSALS]\"></A>"
+		if [ "$TASK" != Argument ]; then
+			echo "<A HREF=\"$ARGUMENT_LIST_URL\"><IMG SRC=\"/wit-icons/Arguments.gif\" ALT=\"[ARGUMENTS]\"></A>"
+fi;	fi;	fi;
+
+
+#
+#	Help text
+#
+if [ "$HELP" ]; then
+	if [ "$TASK" = Topic ]; then
+		cat <<_EOT_
+<H1>Welcome to WIT - W3 Interactive Talk</H1>
+<BLOCKQUOTE><EM>
+	Here you see a list of topics available on this W3 Interactive
+	Talk area -- you can select one by clicking on it, or you can
+	start a discussion on a new topic by pressing the <B>New
+	topic</B> button. <P>
+
+	If this is the first time you use this service, and you want
+	to take part in the discussion, get yourself a nickname
+	(username) and password by clicking on the <B>Subscribe</B>
+	button.
+</EM></BLOCKQUOTE>
+_EOT_
+	elif [ "$TASK" = Proposal ]; then
+		cat <<_EOT_
+<BLOCKQUOTE><EM>
+	This is one topic with a list of proposals to it - you can
+	take part in the discussion by selecting one proposal and
+	replying to it or to other replies.  You can also make a new
+	proposal by pressing the button in the bottom of the page.
+</EM></BLOCKQUOTE>
+_EOT_
+	elif [ "$TASK" = Argument ]; then
+		cat <<_EOT_
+<BLOCKQUOTE><EM>
+	This is a proposal with the discussion of it.  You can write
+	your own reply by pressing the <B>Agree</B> or <B>Disagree</B>
+	button.
+	In GUI browsers,
+	<IMG SRC="/wit-icons/Tick.gif" ALT="tick"> means agree,
+	<IMG SRC="/wit-icons/Cross.gif" ALT="cross"> means disagree.
+</EM></BLOCKQUOTE>
+_EOT_
+	elif [ "$TASK" = SecondArgument ]; then
+		cat <<_EOT_
+<BLOCKQUOTE><EM>
+	This is an article in the discussion about the proposal.
+	Again, you can express your own opinions by pressing the
+	<B>Agree</B> or <B>Disagree</B> button.
+</EM></BLOCKQUOTE>
+_EOT_
+fi;	fi
+
+
+#
+#	View document/README
+#
+if [ "$TASK" = Topic  -a  -f $DISCUSS/README ]; then
+	echo "<HR>"
+	cat $DISCUSS/README
+fi
+if [ "$TASK" != Topic ]; then
+	#
+	#	Find out the author
+	#
+	echo "<HR>"
+	FROM=`grep From: $PARENT.about 2>/dev/null`
+	if [ $? -eq 0 ]; then
+		set $FROM
+		NICKNAME=$2
+		if [ "$NICKNAME" ]; then
+			LINK=`grep Home-URL: $PEOPLE/$NICKNAME 2>/dev/null`
+			if [ $? -eq 0 ]; then
+				set $LINK
+				LINK=$2
+			fi
+			REALNAME=`grep Name: $PEOPLE/$NICKNAME 2>/dev/null`
+			if [ "$REALNAME" ]; then
+				set $REALNAME; shift
+				REALNAME=$*
+			else
+				REALNAME=$NICKNAME
+			fi
+			EMAIL=`grep Email: $PEOPLE/$NICKNAME 2>/dev/null`
+			if [ "$EMAIL" ]; then
+				set $EMAIL
+				EMAIL=$2
+			fi
+		fi
+	fi
+	if [ -z "$NICKNAME" ]; then
+		NICKNAME=Anonymous
+	fi
+	if [ -z "$REALNAME" ]; then
+		REALNAME=Anonymous
+	fi
+	if [ "$EMAIL" ]; then
+		EMAIL_STR=", <A HREF=\"mailto:$EMAIL\">&lt;$EMAIL&gt;</A>"
+	fi
+	if [ "$LINK" ]; then
+		LINK_STR1="<A HREF=\"$LINK\">"
+		LINK_STR2="</A>"
+	fi
+	#
+	#	Output headers
+	#
+	echo "<ADDRESS>From: $LINK_STR1$REALNAME$LINK_STR2$EMAIL_STR</ADDRESS>"
+	(	grep '^Date:' $PARENT.about
+		grep '^Topic:' $PARENT.about
+		grep '^Proposal:' $PARENT.about
+		grep '^Argument:' $PARENT.about
+	) | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' |
+		while read line; do
+			set $line
+			if [ "$1" = "Argument:" ]; then
+				shift
+				if [ "$argnum" ]; then
+					argnum=`expr $argnum + 1`
+				else
+					argnum=1
+				fi
+				line="Argument #$argnum: $*"
+			fi
+			echo "<ADDRESS>$line</ADDRESS>"
+		done
+
+	S=`grep Subject: $PARENT.about 2>/dev/null`
+	if [ $? = 0 ]; then
+		set $S; shift
+		echo "<H1>$*</H1>"
+	fi
+
+	#
+	#	Output the actual document
+	#
+	echo "<P>"
+	cat $PARENT.html
+fi
+
+#
+#	Reply buttons
+#
+if [ "$PRE" = Argument ]; then
+	cat<<_EOT_
+<HR>
+<A HREF="$POST_ACTION/Opinion=agree"><IMG SRC="/wit-icons/Agree.gif" ALT="[AGREE]"></A>
+<A HREF="$POST_ACTION/Opinion=disagree"><IMG SRC="/wit-icons/Disagree.gif" ALT="[DISAGREE]"></A>
+_EOT_
+fi
+echo "<HR>"
+
+
+#
+#	Produce listing
+#
+if [ "$PRE" = Argument ]; then
+	if [ -s "$PARENT.arguments.html" ]; then
+		echo "<UL>"
+		cat $PARENT.arguments.html
+		echo "</UL>"
+	else
+		echo "<EM>No arguments yet.</EM> <P>"
+fi;	fi
+
+if [ "$PRE" != Argument ]; then
+	#
+	#	Listing heading
+	#
+	(
+	    for i in $DIR/*.about
+	    do
+		N=`expr $i : '.*[^0-9]\([0-9]*\)\.about'`
+		line=`grep "Subject:" $i 2>/dev/null`
+		if [ $? -eq 0 ]; then
+			set $line
+			shift
+			echo "<LI> <A HREF=\"$LIST_ACTION/$PRE${N}\">${*:-[no subject]}</A>"
+		fi
+	    done
+	) > $TMPFILE
+
+	if [ -s $TMPFILE ]; then
+		echo "<H1>${TASK}s</H1>"
+		echo "<UL>"
+		cat $TMPFILE
+		echo "</UL><HR>"
+	elif [ "$TASK" = Topic ]; then
+		echo "<EM>No topics yet.</EM> <P>"
+	else
+		echo "<EM>No proposals yet.</EM> <P>"
+	fi
+	rm $TMPFILE
+
+	if [ "$TASK" = Topic ]; then
+		echo "<A HREF=\"$POST_ACTION\"><IMG SRC=\"/wit-icons/NewTopic.gif\" ALT=\"[NEW TOPIC]\"></A>"
+	elif [ "$TASK" = Proposal ]; then
+		echo "<A HREF=\"$POST_ACTION\"><IMG SRC=\"/wit-icons/NewProposal.gif\" ALT=\"[NEW PROPOSAL]\"></A>"
+fi;	fi
+
+#
+#	Sign
+#
+echo "<HR><ADDRESS>WIT - W3 Interactive Talk</ADDRESS>"
+

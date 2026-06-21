@@ -1,0 +1,29 @@
+# Git
+.git
+.gitignore
+
+# Docker
+.dockerignore
+docker-compose*.yml
+
+# Documentation
+README.md
+LICENSE
+
+# Test files
+test-wit.sh
+
+# Editor files
+*~
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Original WIT files (preserved for history)
+wit-bin/
+wit-icons/

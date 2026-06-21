@@ -1,0 +1,221 @@
+#!/bin/sh
+#						Version 0.1 (Prototype)
+#	WIT - W3 Interactive Talk
+#
+#	Post a WIT document; can be a new
+#	 - topic
+#	 - proposal
+#	 - argument
+#
+# Author:
+#	Ari Luotonen <luotonen@www.cern.ch>
+#	June 1994
+#
+
+#
+#	MACHINE DEPENDENT -- SET THIS:
+#
+INIT=/CERN_WWW/wit-bin/wit-settings
+
+#
+#	NO NEED TO EDIT ANY FURTHER
+#
+
+#
+#	Get common settings
+#
+. $INIT
+
+
+#
+#	Generate the doc
+#
+cat<<_EOT_
+Content-Type: text/html
+
+<TITLE>$TITLE</TITLE>
+_EOT_
+
+#
+#	Check for validity
+#
+if [ ! -d "$DISCUSS" ]; then
+	echo "<H1>No such discussion directory: $DISCUSS</H1>"
+	exit
+fi
+
+#
+#	Make sure the directory is valid
+#
+if [ ! -d "$DIR" ]; then
+	E=`mkdir "$DIR" 2>&1`
+	if [ $? -ne 0 ]; then
+		echo "<H2>ERROR</H2>"
+		echo "No directory <CODE>$DIR</CODE>"
+		echo "and <CODE>mkdir</CODE> failed: <PRE>$E</PRE>"
+		exit
+fi;	fi
+
+
+#
+#	Form for entering a new document
+#
+if [ "$CONTENT_LENGTH" -eq 0 ]
+then
+	cat<<_EOT_
+<H1>$TITLE</H1>
+<HR>
+_EOT_
+	if [ "$TASK" != Topic ]; then
+		S=`grep '^Subject:' $PARENT.about 2>/dev/null`
+		if [ $? -eq 0 ]; then
+			set $S; shift; S=$*
+			echo "<ADDRESS>$PARENT_TYPE: $S</ADDRESS><P>"
+		fi
+		cat $PARENT.html 2>/dev/null
+		echo "<P><HR>"
+	fi
+
+	if [ "$HELP" ]; then cat <<_EOT_
+<BLOCKQUOTE><EM>
+	Write a one-line <B>summary</B> of your article; this will
+	appear in article listings as the subject. <B>Don't</B> use
+	HTML markup inside summary - only plain text is allowed.
+</EM></BLOCKQUOTE>
+_EOT_
+	fi
+
+	cat<<_EOT_
+<FORM METHOD="POST" ACTION="$POST_ACTION">
+<PRE>
+${SUBJECT:=Summary:}<INPUT TYPE="text" NAME="subject" SIZE="70">
+_EOT_
+	if [ "$HELP" ]; then cat <<_EOT_
+</PRE>
+<BLOCKQUOTE><EM>
+	The more elaborate explanation can be either HTML or plain
+	text. Indicate this by checking the correct radio button.
+	When you have finished your article press the <B>Post</B>
+	button.
+</EM></BLOCKQUOTE>
+<PRE>
+_EOT_
+	fi
+cat<<_EOT_
+        <B><INPUT
+	TYPE="radio" NAME="type" VALUE="html">HTML <INPUT
+	TYPE="radio" NAME="type" VALUE="plain" CHECKED>Plain text</B>
+        <TEXTAREA NAME="content" ROWS="20" COLS="70"></TEXTAREA>
+</PRE>
+<INPUT TYPE="submit" VALUE=" Post "> <EM>This is like sending mail: no undo (yet)!</EM>
+</FORM>
+_EOT_
+
+#
+#	Accept a new document
+#
+else
+	eval `$CGIPARSE -init`
+	eval `$CGIPARSE -form`
+
+	S=`ls $DIR/*.about 2>/dev/null | tail -1`
+	N=`expr "$S" : '.*[^0-9]\([0-9]*\).about' 2>&1`
+	if [ $? = 0  -a  "$N" -gt 0 ]; then
+		N=`expr $N + 1`
+	else
+		N=1001
+	fi
+	DOC=$DIR/$PRE$N
+	touch $DOC.about
+	if [ "$NEXT" ]; then
+		E=`mkdir $DOC.$NEXT 2>&1`
+		if [ $? != 0 ]; then
+			echo "<H1>ERROR</H1>"
+			echo "<B>$E ($DOC.$NEXT already exists - synchronization problem?)"
+			echo "Please retry!</B>"
+			exit
+	fi;	fi
+	echo "Subject: $FORM_subject"	>  $DOC.about
+	echo "From: $REMOTE_USER"	>> $DOC.about
+	echo "Date:" `date`		>> $DOC.about
+	if [ "$FORM_type" = "html" ]; then
+		$CGIPARSE -value content		>  $DOC.html
+	else
+		echo "<PRE>"				>  $DOC.html
+		$CGIPARSE -value content		>> $DOC.html
+		echo "</PRE>"				>> $DOC.html
+	fi
+	touch $DOC.arguments.html
+
+	#
+	#	Update links
+	#
+	if [ "$PRE" = Argument ]; then
+		echo "Argues: $ACTION_PATH"					>> $DOC.about
+		echo "Argued-by: /Topic$TOPIC_NO/Proposal$PROPOSAL_NO/$PRE$N"	>> $PARENT.about
+
+		#
+		#	Record opinion to the previous argument
+		#
+#		PREV_OPINION=`grep '^Opinion' $PARENT.about 2>/dev/null`
+#		if [ $? -eq 0 ]; then
+#			set $PREV_OPINION
+#			PREV_OPINION=$3
+#		fi
+#		if [ "$PREV_OPINION" = disagree  -o  "$PREV_OPINION" = flame ]; then
+#			if [ "$OPINION" = agree ]; then
+#				OPINION_ORIG=disagree
+#			else
+#				OPINION_ORIG=agree
+#			fi
+#		else
+#			OPINION_ORIG=$OPINION
+#		fi
+		echo "Opinion: $OPINION"	>> $DOC.about
+
+		#
+		#	Update argument lists
+		#
+		$UPDATE_ARG_LIST
+	fi
+
+	if [ "$TASK" != Topic ]; then
+		S=`grep '^Subject:' $TOPIC.about 2>/dev/null`
+		if [ $? = 0 ]; then
+			set $S; shift
+			echo "Topic: $*"				>> $DOC.about
+		fi
+		if [ "$TASK" != Proposal ]; then
+			S=`grep '^Subject:' $PROPOSAL.about 2>/dev/null`
+			if [ $? = 0 ]; then
+				set $S; shift
+				echo "Proposal: $*"			>> $DOC.about
+			fi
+			if [ "$TASK" = SecondArgument ]; then
+				grep '^Argument:' $ARGUMENT.about	>> $DOC.about	2>/dev/null
+				S=`grep '^Subject:' $ARGUMENT.about 2>/dev/null`
+				if [ $? = 0 ]; then
+					set $S; shift
+					echo "Argument: $*"		>> $DOC.about
+				fi
+			fi
+		fi
+	fi
+
+	#
+	#	Output document
+	#
+	echo "<H2>$FORM_subject</H2>"
+	cat $DOC.html
+
+	#
+	#	The back buttom
+	#
+	echo "<HR><A HREF=\"$LIST_ACTION\"><IMG SRC=\"/wit-icons/Back.gif\" ALT=\"[BACK]\"></A>"
+fi
+
+#
+#	Sign
+#
+echo "<HR><ADDRESS>WIT - W3 Interactive Talk</ADDRESS>"
+

@@ -1,0 +1,25 @@
+# Local build version - use this if you want to build the image yourself
+services:
+  wit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wit-server
+    ports:
+      - "1994:80"
+    volumes:
+      - wit-data:/opt/wit/data
+    environment:
+      - WIT_ROOT=/opt/wit
+      - WIT_SERVER=nginx
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+
+volumes:
+  wit-data:
+    driver: local

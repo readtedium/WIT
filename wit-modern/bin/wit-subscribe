@@ -1,0 +1,156 @@
+#!/bin/sh
+#						Version 0.2 (Modernized)
+#	WIT - W3 Interactive Talk
+#
+#	Allocate a nickname for a user
+#
+#	Originally by Ari Luotonen <luotonen@www.cern.ch>, June 1994
+#	Modernized for Docker deployment, 2026
+#
+
+WIT_ROOT=${WIT_ROOT:-/opt/wit}
+INIT=${WIT_ROOT}/bin/wit-settings
+
+. "$INIT"
+
+cat<<_EOT_
+Content-Type: text/html
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Subscription to WIT</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .nav { margin: 10px 0; }
+        .nav img { border: none; vertical-align: middle; }
+        hr { border: 1px solid #ccc; }
+        form { margin: 20px 0; }
+        pre { background: #f5f5f5; padding: 10px; border-radius: 5px; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+<h1>Subscription</h1>
+
+_EOT_
+
+if [ -z "$ADMIN" ] || [ ! -d "$ADMIN" ]; then
+    echo "<h2 class=\"error\">Public ADMIN directory doesn't exist</h2>"
+    echo "Public access apparently not enabled."
+    echo "</body></html>"
+    exit
+elif [ -z "$PEOPLE" ] || [ ! -d "$PEOPLE" ]; then
+    echo "<h2 class=\"error\">People database directory doesn't exist: $PEOPLE</h2>"
+    echo "Public access apparently not enabled."
+    echo "</body></html>"
+    exit
+fi
+
+if [ "$HELP" ]; then
+    cat <<_EOT_
+<blockquote><em>
+    <b>Important:</b> This form updates the <b>public</b> WIT
+    password database on this host - not a private one.
+    If you are browsing a private WIT Discussion Web you need to
+    contact the webmaster if you don't have a nickname yet. <p>
+
+    If you already have a username for WIT at this host
+    you shouldn't use this form anymore! <p>
+
+    Your "nickname" is your username, and you must type it and
+    your password into your browser's password dialog box when you
+    post articles. <p>
+
+    Nickname, password and real name are obligatory; e-mail, home
+    URL and photo URL are optional, but recommended.
+</em></blockquote>
+<hr>
+_EOT_
+fi
+
+if [ "$CONTENT_LENGTH" -gt 0 ] 2>/dev/null && [ -n "$CONTENT_LENGTH" ]; then
+    #
+    #	Actual subscription
+    #
+    if [ -z "$FORM_nickname" ] || [ -z "$FORM_password" ] || \
+       [ -z "$FORM_verify" ] || [ -z "$FORM_name" ]; then
+        cat<<_EOT_
+<h2 class="error">ERROR: Form is incomplete</h2>
+<blockquote><em>
+    You must fill out at least the <b>nickname</b>, <b>password</b>,
+    <b>verify</b> and <b>real name</b> fields.
+</em></blockquote>
+_EOT_
+    elif [ "$FORM_password" != "$FORM_verify" ]; then
+        cat<<_EOT_
+<h2 class="error">ERROR: Password mismatch</h2>
+<blockquote><em>
+    Password doesn't match the one you wrote into the <b>Verify</b>
+    field - please, retype both of them.
+</em></blockquote>
+_EOT_
+        FORM_password=""
+        FORM_verify=""
+    else
+        PERSON="$PEOPLE/$FORM_nickname"
+        if [ -f "$PERSON" ]; then
+            cat<<_EOT_
+<h2 class="error">ERROR: Nickname $FORM_nickname is already in use</h2>
+<blockquote><em>
+    Please, pick another nickname for yourself, someone else has
+    already reserved "$FORM_nickname".
+</em></blockquote>
+_EOT_
+        else
+            cat > "$PERSON" <<_EOT_
+Nickname: $FORM_nickname
+Name: $FORM_name
+Email: $FORM_email
+Home-URL: $FORM_home
+Photo-URL: $FORM_photo
+_EOT_
+            # Create Apache htpasswd entry (use bcrypt for nginx compatibility)
+            HTPASSWD_FILE="${ADMIN}/htpasswd"
+            if [ ! -f "$HTPASSWD_FILE" ]; then
+                htpasswd -bBC 10 "$HTPASSWD_FILE" "$FORM_nickname" "$FORM_password"
+            else
+                htpasswd -bBC 10 "$HTPASSWD_FILE" "$FORM_nickname" "$FORM_password"
+            fi
+
+            cat<<_EOT_
+<h2>Welcome, $FORM_nickname!</h2>
+<blockquote><em>
+    Don't forget your nickname "$FORM_nickname" or
+    your password! <p>
+
+    <b>Have fun!</b>
+</em></blockquote>
+<div class="nav"><a href="$TOPIC_LIST_URL"><img src="/wit-icons/Topics.gif" alt="[TOPICS]"></a></div>
+</body></html>
+_EOT_
+            exit 0
+        fi
+    fi
+fi
+
+#
+#	Output form
+#
+cat<<_EOT_
+<form method="POST" action="/cgi-bin/wit-subscribe">
+<pre>
+     Nickname:<input type="text"     name="nickname" value="$FORM_nickname">
+     Password:<input type="password" name="password" value="$FORM_password">
+       Verify:<input type="password" name="verify"   value="$FORM_verify"> <i>Retype password here</i>
+    Real name:<input type="text"     name="name"     value="$FORM_name"   size="40">
+       E-mail:<input type="text"     name="email"    value="$FORM_email"  size="40">
+Home page URL:<input type="text"     name="home"     value="$FORM_home"   size="60">
+    Photo URL:<input type="text"     name="photo"    value="$FORM_photo"  size="60">
+
+<input type="submit" value=" Subscribe ">
+</pre>
+<hr>
+</form>
+</body></html>
+_EOT_
