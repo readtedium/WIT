@@ -19,7 +19,7 @@ _**Note:** The data in `wit-bin` is the original version of the code with no cha
 
 In part because this software wasn't available on the W3C website, unlike so many other pieces of early Web history. When researching this topic for Tedium, I was really surprised that this very fundamental software was not actually available.
 
-The original code is set in place. But some modest updates to modernize it are also in the folder. If you want to take a stab at running the original software, definitely go for it. But keep in mind that it is 32-year-old forum software and likely has 32 years of security issues hididing within it.
+The original code is set in place. But some modest updates to modernize it are also in the folder. If you want to take a stab at running the original software, definitely go for it. But keep in mind that it is 32-year-old forum software and likely has 32 years of security issues hiding within it.
 
 ## Quick Start
 
