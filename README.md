@@ -13,6 +13,8 @@ WIT was one of the first web-based discussion forums, developed at CERN alongsid
 
 This is a modernized version that runs in Docker, making it easy to deploy and share on the web.
 
+_**Note:** The data in `wit-bin` is the original version of the code with no changes; `wit-modern` is where all updates that make the code function as a modern website live. To ensure the code maintains its original form, we will also add a link to a fork of the most recent version of the code available._
+
 ## Why Build This?
 
 In part because this software wasn't available on the W3C website, unlike so many other pieces of early Web history. When researching this topic for Tedium, I was really surprised that this very fundamental software was not actually available.
